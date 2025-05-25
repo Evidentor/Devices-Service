@@ -1,2 +1,2 @@
-# Telemetry-Service
-IoT Telemetry Service
+# Devices-Service
+IoT Device Service
