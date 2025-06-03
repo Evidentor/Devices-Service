@@ -1,3 +1,6 @@
+mqtt:
+  broker-url: tcp://localhost:1883
+  client-id: devicesServiceClient
 server:
   servlet:
     context-path: /api
