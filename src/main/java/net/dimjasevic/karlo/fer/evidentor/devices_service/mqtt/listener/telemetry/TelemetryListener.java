@@ -2,9 +2,12 @@ package net.dimjasevic.karlo.fer.evidentor.devices_service.mqtt.listener.telemet
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
+import net.dimjasevic.karlo.fer.evidentor.devices_service.grpc.client.DecisionClient;
 import net.dimjasevic.karlo.fer.evidentor.devices_service.mqtt.annotation.MqttListener;
 import net.dimjasevic.karlo.fer.evidentor.domain.devices.Device;
 import net.dimjasevic.karlo.fer.evidentor.domain.devices.DeviceRepository;
+import net.dimjasevic.karlo.fer.evidentor.domain.proto.CheckAccessRequest;
+import net.dimjasevic.karlo.fer.evidentor.domain.proto.CheckAccessResponse;
 import net.dimjasevic.karlo.fer.evidentor.domain.rooms.Room;
 import net.dimjasevic.karlo.fer.evidentor.domain.rooms.RoomRepository;
 import net.dimjasevic.karlo.fer.evidentor.domain.telemetry.Telemetry;
@@ -28,6 +31,7 @@ public class TelemetryListener implements IMqttMessageListener {
     private final RoomRepository roomRepository;
     private final DeviceRepository deviceRepository;
     private final TelemetryRepository telemetryRepository;
+    private final DecisionClient decisionClient;
 
     @Override
     public void messageArrived(String topic, MqttMessage mqttMessage) throws Exception {
@@ -37,7 +41,14 @@ public class TelemetryListener implements IMqttMessageListener {
 
         TelemetryMessage telemetryMessage = MAPPER.readValue(payload, TelemetryMessage.class);
 
-        // TODO: Camunda, access control dmn
+        CheckAccessRequest request = CheckAccessRequest
+                .newBuilder()
+                .setDeviceId(telemetryMessage.deviceId())
+                .setCardId(telemetryMessage.cardId())
+                .setRoomId(telemetryMessage.roomId())
+                .build();
+        CheckAccessResponse response = decisionClient.checkAccess(request);
+        LOGGER.info(response.toString());
 
         User user = userRepository.findByCardId(telemetryMessage.cardId()).orElseThrow();
         Room room = roomRepository.findById(telemetryMessage.roomId()).orElseThrow();
@@ -45,5 +56,6 @@ public class TelemetryListener implements IMqttMessageListener {
 
         Telemetry telemetry = new Telemetry(user, device, room, LocalDateTime.now());
         telemetryRepository.save(telemetry);
+        LOGGER.info("Telemetry: {} saved.", telemetry.getId());
     }
 }

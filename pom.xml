@@ -18,7 +18,7 @@
 		<dependency>
 			<groupId>net.dimjasevic.karlo.fer.evidentor</groupId>
 			<artifactId>domain</artifactId>
-			<version>0.0.2-SNAPSHOT</version>
+			<version>0.0.3-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
