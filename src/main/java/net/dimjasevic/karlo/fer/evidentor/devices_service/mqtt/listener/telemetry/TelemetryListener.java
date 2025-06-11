@@ -3,6 +3,7 @@ package net.dimjasevic.karlo.fer.evidentor.devices_service.mqtt.listener.telemet
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import net.dimjasevic.karlo.fer.evidentor.devices_service.grpc.client.DecisionClient;
+import net.dimjasevic.karlo.fer.evidentor.devices_service.mqtt.MqttService;
 import net.dimjasevic.karlo.fer.evidentor.devices_service.mqtt.annotation.MqttListener;
 import net.dimjasevic.karlo.fer.evidentor.domain.devices.Device;
 import net.dimjasevic.karlo.fer.evidentor.domain.devices.DeviceRepository;
@@ -20,9 +21,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @AllArgsConstructor
-@MqttListener(topic = "v1/topic")
+@MqttListener(topic = "/v1/devices/+/telemetry")
 public class TelemetryListener implements IMqttMessageListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(TelemetryListener.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -32,6 +34,7 @@ public class TelemetryListener implements IMqttMessageListener {
     private final DeviceRepository deviceRepository;
     private final TelemetryRepository telemetryRepository;
     private final DecisionClient decisionClient;
+    private final MqttService mqttService;
 
     @Override
     public void messageArrived(String topic, MqttMessage mqttMessage) throws Exception {
@@ -41,21 +44,39 @@ public class TelemetryListener implements IMqttMessageListener {
 
         TelemetryMessage telemetryMessage = MAPPER.readValue(payload, TelemetryMessage.class);
 
+        // Get deviceId from serialNumber that is in topic name
+        String deviceSerialNumber = topic.split("/")[3];
+        Device device = deviceRepository.getBySerialNumber(deviceSerialNumber).orElseThrow();
+
         CheckAccessRequest request = CheckAccessRequest
                 .newBuilder()
-                .setDeviceId(telemetryMessage.deviceId())
+                .setDeviceId(device.getId())
                 .setCardId(telemetryMessage.cardId())
-                .setRoomId(telemetryMessage.roomId())
+                .setRoomId(device.getRoom() == null ? -1 : device.getRoom().getId())
                 .build();
         CheckAccessResponse response = decisionClient.checkAccess(request);
         LOGGER.info(response.toString());
+        Boolean accessGranted = response.getAccessGranted();
 
-        User user = userRepository.findByCardId(telemetryMessage.cardId()).orElseThrow();
-        Room room = roomRepository.findById(telemetryMessage.roomId()).orElseThrow();
-        Device device = deviceRepository.findById(telemetryMessage.deviceId()).orElseThrow();
+        if (accessGranted) {
+            User user = userRepository.findByCardId(telemetryMessage.cardId()).orElseThrow();
+            Room room = roomRepository.findById(1L).orElseThrow();
 
-        Telemetry telemetry = new Telemetry(user, device, room, LocalDateTime.now());
-        telemetryRepository.save(telemetry);
-        LOGGER.info("Telemetry: {} saved.", telemetry.getId());
+            Telemetry telemetry = new Telemetry(user, device, room, LocalDateTime.now(ZoneId.of("UTC")));
+            telemetryRepository.save(telemetry);
+
+            LOGGER.info(
+                    "Telemetry: {} saved. [userId={}] [deviceId={}] [roomId={}],",
+                    telemetry.getId(),
+                    telemetry.getUser().getId(),
+                    telemetry.getDevice().getId(),
+                    telemetry.getRoom().getId()
+            );
+        }
+
+        // Inform device about access
+        String ackTopic = String.format("/v1/devices/%s/telemetry/ack", deviceSerialNumber);
+        TelemetryAckMessage message = new TelemetryAckMessage(accessGranted);
+        mqttService.publish(ackTopic, MAPPER.writeValueAsString(message), 1, false);
     }
 }
