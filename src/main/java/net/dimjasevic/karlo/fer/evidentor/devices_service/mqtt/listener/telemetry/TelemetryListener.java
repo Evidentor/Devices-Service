@@ -48,19 +48,19 @@ public class TelemetryListener implements IMqttMessageListener {
         String deviceSerialNumber = topic.split("/")[3];
         Device device = deviceRepository.getBySerialNumber(deviceSerialNumber).orElseThrow();
 
+        Room room = device.getRoom();
         CheckAccessRequest request = CheckAccessRequest
                 .newBuilder()
                 .setDeviceId(device.getId())
                 .setCardId(telemetryMessage.cardId())
-                .setRoomId(device.getRoom() == null ? -1 : device.getRoom().getId())
+                .setRoomId(room == null ? -1 : device.getRoom().getId())
                 .build();
         CheckAccessResponse response = decisionClient.checkAccess(request);
         LOGGER.info(response.toString());
-        Boolean accessGranted = response.getAccessGranted();
+        boolean accessGranted = response.getAccessGranted();
 
-        if (accessGranted) {
+        if (accessGranted && room != null) {
             User user = userRepository.findByCardId(telemetryMessage.cardId()).orElseThrow();
-            Room room = roomRepository.findById(1L).orElseThrow();
 
             Telemetry telemetry = new Telemetry(user, device, room, LocalDateTime.now(ZoneId.of("UTC")));
             telemetryRepository.save(telemetry);
